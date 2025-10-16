@@ -7,7 +7,7 @@ use crossterm::{
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style, Stylize},
+    style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap},
     Frame, Terminal,
@@ -229,8 +229,7 @@ fn render_search_box(f: &mut Frame, app: &App, area: Rect) {
         ),
     };
 
-    let mut text = Text::from(Line::from(msg));
-    text.patch_style(style);
+    let text = Text::from(Line::from(msg)).patch_style(style);
     let search = Paragraph::new(text).block(Block::default().borders(Borders::ALL).title("Search"));
     f.render_widget(search, area);
 }

@@ -1,1 +1,2 @@
 {"id":"playbot-1","title":"just","description":"","status":"open","priority":2,"issue_type":"task","created_at":"2025-10-16T16:14:12.228994-07:00","updated_at":"2025-10-16T16:14:12.228994-07:00"}
+{"id":"playbot-2","title":"Add --search flag to CLI","description":"Add a search utility to search database entries by title or artist","status":"closed","priority":2,"issue_type":"task","created_at":"2025-10-16T16:18:21.001525-07:00","updated_at":"2025-10-16T16:19:03.875903-07:00","closed_at":"2025-10-16T16:19:03.875903-07:00"}

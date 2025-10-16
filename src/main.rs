@@ -26,6 +26,14 @@ struct Cli {
     /// Browse database with interactive TUI
     #[arg(short, long)]
     browse: bool,
+
+    /// Search database by song title or artist name
+    #[arg(short, long)]
+    search: Option<String>,
+
+    /// Show help information
+    #[arg(long, short = 'h', action = clap::ArgAction::Help)]
+    help: Option<bool>,
 }
 
 #[tokio::main]
@@ -42,6 +50,27 @@ async fn main() -> Result<()> {
     // Handle --browse flag
     if cli.browse {
         return tui::run(db);
+    }
+
+    // Handle --search flag
+    if let Some(query) = &cli.search {
+        let results = db.search_tracks(query)?;
+
+        if results.is_empty() {
+            println!("No results found for '{}'", query);
+            return Ok(());
+        }
+
+        println!("Found {} result(s) for '{}':\n", results.len(), query);
+        for (i, track) in results.iter().enumerate() {
+            println!("{}. {} by {}", i + 1, track.track_name, track.artist_name);
+            println!("   Album: {}", track.album_name);
+            if !track.release_date.is_empty() {
+                println!("   Released: {}", track.release_date);
+            }
+            println!();
+        }
+        return Ok(());
     }
 
     // Handle --recent flag
