@@ -1,2 +1,1 @@
-# playbot
-entertainment for robots
+![logo](playbot.png)
