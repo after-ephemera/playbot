@@ -4,12 +4,13 @@ A CLI tool that fetches detailed information about your currently playing Spotif
 
 ## Features
 
-- 🎵 Fetches currently playing track from Spotify
+- 🎵 Fetches currently playing track from local Spotify desktop app (no API credentials needed!)
 - 📝 Gets lyrics from Genius API
-- 👤 Retrieves artist information and genres
-- 💿 Shows album details, release date, and popularity
+- 👤 Retrieves artist information
+- 💿 Shows album details and track duration
 - 💾 Caches results in local SQLite database for faster subsequent lookups
 - 🚀 Built with Rust for performance and reliability
+- 🌍 Cross-platform support (Linux, macOS, Windows)
 
 ## Installation
 
@@ -28,10 +29,6 @@ The binary will be available at `target/release/playbot`.
 Create a `config.toml` file in the project root (you can copy from `config.toml.example`):
 
 ```toml
-[spotify]
-client_id = "your_spotify_client_id"
-client_secret = "your_spotify_client_secret"
-
 [genius]
 access_token = "your_genius_access_token"
 
@@ -39,22 +36,26 @@ access_token = "your_genius_access_token"
 path = "playbot.db"
 ```
 
-### Getting API Credentials
-
-**Spotify:**
-1. Go to [Spotify Developer Dashboard](https://developer.spotify.com/dashboard)
-2. Create a new app
-3. Copy the Client ID and Client Secret
-4. Add `http://localhost:8888/callback` as a Redirect URI in your app settings
+### Getting Genius API Credentials
 
 **Genius:**
 1. Go to [Genius API Clients](https://genius.com/api-clients)
 2. Create a new API client
 3. Generate an access token
 
+**Note:** No Spotify API credentials are needed! The tool reads directly from your local Spotify desktop application.
+
+## Requirements
+
+- **Spotify Desktop App**: Must be installed and running with a song playing
+- **Platform-specific tools**:
+  - **Linux**: `dbus-send` (usually pre-installed)
+  - **macOS**: `osascript` (built-in)
+  - **Windows**: PowerShell (built-in)
+
 ## Usage
 
-Run the tool to get information about your currently playing Spotify track:
+Make sure Spotify desktop app is running and playing a song, then run:
 
 ```bash
 cargo run
@@ -83,12 +84,12 @@ playbot --refresh
 
 ## How It Works
 
-1. Connects to Spotify API to get your currently playing track
+1. Queries your local Spotify desktop app to get the currently playing track
+   - **Linux**: Uses D-Bus/MPRIS to communicate with Spotify
+   - **macOS**: Uses AppleScript via `osascript` to query Spotify
+   - **Windows**: Uses PowerShell to access Windows Media Control API
 2. Checks the local SQLite cache for existing data
-3. If not cached (or `--refresh` is used), fetches:
-   - Lyrics from Genius API
-   - Artist genres from Spotify
-   - Track details (album, release date, popularity)
+3. If not cached (or `--refresh` is used), fetches lyrics from Genius API
 4. Stores the data in the cache for future use
 5. Displays all information in a formatted output
 
@@ -96,12 +97,20 @@ playbot --refresh
 
 - **clap**: Command-line argument parsing
 - **anyhow**: Error handling
-- **rspotify**: Spotify API client
 - **genius-rust**: Genius API client for lyrics
 - **rusqlite**: SQLite database for caching
 - **tokio**: Async runtime
 - **serde**: Serialization/deserialization
 - **toml**: Configuration file parsing
+
+## Benefits Over API Approach
+
+✅ No Spotify API credentials needed
+✅ No OAuth flow required
+✅ Simpler setup - just install and run
+✅ Works offline (for cached songs)
+✅ Faster - direct local access
+✅ More privacy - no data sent to Spotify servers
 
 ## License
 

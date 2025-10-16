@@ -4,15 +4,8 @@ use std::fs;
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
-    pub spotify: SpotifyConfig,
     pub genius: GeniusConfig,
     pub database: DatabaseConfig,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct SpotifyConfig {
-    pub client_id: String,
-    pub client_secret: String,
 }
 
 #[derive(Debug, Deserialize)]

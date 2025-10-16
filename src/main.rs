@@ -30,8 +30,8 @@ async fn main() -> Result<()> {
     let db = db::Database::new(&config.database.path)?;
     db.init()?;
 
-    // Get currently playing track from Spotify
-    let spotify_client = spotify::SpotifyClient::new(&config.spotify)?;
+    // Get currently playing track from local Spotify client
+    let spotify_client = spotify::SpotifyClient::new()?;
     let track_info = spotify_client.get_current_track().await?;
 
     println!("🎵 Now Playing: {} by {}", track_info.title, track_info.artist);
