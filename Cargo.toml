@@ -1,6 +1,15 @@
 [package]
 name = "playbot"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [dependencies]
+clap = { version = "4.5", features = ["derive"] }
+anyhow = "1.0"
+rspotify = { version = "0.13", default-features = false, features = ["client-reqwest"] }
+genius-rust = "0.1"
+rusqlite = { version = "0.32", features = ["bundled"] }
+tokio = { version = "1.40", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
+reqwest = { version = "0.12", features = ["json"] }
