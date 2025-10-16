@@ -190,4 +190,13 @@ impl Database {
 
         Ok(tracks)
     }
+
+    pub fn count_tracks(&self) -> Result<usize> {
+        let count: usize = self.conn.query_row(
+            "SELECT COUNT(*) FROM tracks",
+            [],
+            |row| row.get(0)
+        )?;
+        Ok(count)
+    }
 }

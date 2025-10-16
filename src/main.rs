@@ -31,6 +31,10 @@ struct Cli {
     #[arg(short, long)]
     search: Option<String>,
 
+    /// Count total tracks in database
+    #[arg(short = 'n', long)]
+    count: bool,
+
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -63,6 +67,27 @@ async fn main() -> Result<()> {
         return tui::run(db);
     }
 
+    // Handle --count flag
+    if cli.count {
+        let count = db.count_tracks()?;
+
+        let celebration = match count {
+            0 => "Your music library is empty! Time to start exploring!",
+            1 => "You've got your first track! The journey begins!",
+            2..=10 => "Nice start! You're building a collection!",
+            11..=50 => "Great collection! You're really getting into it!",
+            51..=100 => "Impressive library! You've got serious variety!",
+            101..=500 => "Wow! You're a true music enthusiast!",
+            501..=1000 => "Absolutely incredible! Your library is massive!",
+            _ => "LEGENDARY STATUS! Your music collection is epic!",
+        };
+
+        println!("🎵 Total tracks in database: {}", count);
+        println!("🎉 {}", celebration);
+
+        return Ok(());
+    }
+
     // Handle --search flag
     if let Some(query) = &cli.search {
         let results = db.search_tracks(query)?;
@@ -72,9 +97,25 @@ async fn main() -> Result<()> {
             return Ok(());
         }
 
+        // Try to get currently playing track (if Spotify is running)
+        let current_track_id = match spotify::SpotifyClient::new() {
+            Ok(client) => match client.get_current_track().await {
+                Ok(track) => Some(track.id),
+                Err(_) => None,
+            },
+            Err(_) => None,
+        };
+
         println!("Found {} result(s) for '{}':\n", results.len(), query);
         for (i, track) in results.iter().enumerate() {
-            println!("{}. {} by {}", i + 1, track.track_name, track.artist_name);
+            let is_playing = current_track_id.as_ref() == Some(&track.track_id);
+
+            if is_playing {
+                // Bright green with bold for NOW PLAYING
+                println!("\x1b[1;92m{}. 🎵 {} by {} ⚡ NOW PLAYING ⚡\x1b[0m", i + 1, track.track_name, track.artist_name);
+            } else {
+                println!("{}. {} by {}", i + 1, track.track_name, track.artist_name);
+            }
             println!("   Album: {}", track.album_name);
             if !track.release_date.is_empty() {
                 println!("   Released: {}", track.release_date);
