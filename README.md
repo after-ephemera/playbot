@@ -1,4 +1,5 @@
-<<<<<<< HEAD
+![logo](playbot.png)
+
 # playbot
 
 A CLI tool that fetches detailed information about your currently playing Spotify song, including lyrics, artist details, and more.
@@ -116,7 +117,3 @@ playbot --refresh
 ## License
 
 MIT
-
-=======
-![logo](playbot.png)
->>>>>>> origin/main
