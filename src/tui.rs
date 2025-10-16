@@ -34,6 +34,7 @@ struct App {
     input_mode: InputMode,
     view_mode: ViewMode,
     should_quit: bool,
+    detail_scroll: u16,
 }
 
 impl App {
@@ -52,7 +53,20 @@ impl App {
             input_mode: InputMode::Normal,
             view_mode: ViewMode::List,
             should_quit: false,
+            detail_scroll: 0,
         })
+    }
+
+    fn scroll_down(&mut self) {
+        self.detail_scroll = self.detail_scroll.saturating_add(1);
+    }
+
+    fn scroll_up(&mut self) {
+        self.detail_scroll = self.detail_scroll.saturating_sub(1);
+    }
+
+    fn reset_scroll(&mut self) {
+        self.detail_scroll = 0;
     }
 
     fn next(&mut self) {
@@ -150,13 +164,42 @@ fn run_app<B: ratatui::backend::Backend>(
                 InputMode::Normal => match key.code {
                     KeyCode::Char('q') => app.should_quit = true,
                     KeyCode::Char('/') => app.input_mode = InputMode::Editing,
-                    KeyCode::Char('j') | KeyCode::Down => app.next(),
-                    KeyCode::Char('k') | KeyCode::Up => app.previous(),
-                    KeyCode::Enter => match app.view_mode {
-                        ViewMode::List => app.view_mode = ViewMode::Detail,
-                        ViewMode::Detail => app.view_mode = ViewMode::List,
+                    KeyCode::Char('j') | KeyCode::Down => match app.view_mode {
+                        ViewMode::List => app.next(),
+                        ViewMode::Detail => app.scroll_down(),
                     },
-                    KeyCode::Esc => app.view_mode = ViewMode::List,
+                    KeyCode::Char('k') | KeyCode::Up => match app.view_mode {
+                        ViewMode::List => app.previous(),
+                        ViewMode::Detail => app.scroll_up(),
+                    },
+                    KeyCode::Char('l') | KeyCode::Right => match app.view_mode {
+                        ViewMode::Detail => {
+                            app.next();
+                            app.reset_scroll();
+                        },
+                        _ => {}
+                    },
+                    KeyCode::Char('h') | KeyCode::Left => match app.view_mode {
+                        ViewMode::Detail => {
+                            app.previous();
+                            app.reset_scroll();
+                        },
+                        _ => {}
+                    },
+                    KeyCode::Enter => match app.view_mode {
+                        ViewMode::List => {
+                            app.reset_scroll();
+                            app.view_mode = ViewMode::Detail;
+                        },
+                        ViewMode::Detail => {
+                            app.reset_scroll();
+                            app.view_mode = ViewMode::List;
+                        },
+                    },
+                    KeyCode::Esc => {
+                        app.reset_scroll();
+                        app.view_mode = ViewMode::List;
+                    },
                     _ => {}
                 },
                 InputMode::Editing => match key.code {
@@ -353,7 +396,7 @@ fn render_track_detail(f: &mut Frame, app: &App, area: Rect) {
     let paragraph = Paragraph::new(lines)
         .block(Block::default().borders(Borders::ALL).title("Track Details"))
         .wrap(Wrap { trim: true })
-        .scroll((0, 0));
+        .scroll((app.detail_scroll, 0));
 
     f.render_widget(paragraph, area);
 }
@@ -366,7 +409,7 @@ fn render_help(f: &mut Frame, app: &App, area: Rect) {
             }
             InputMode::Editing => "Type to search | Enter: Finish | Esc: Cancel",
         },
-        ViewMode::Detail => "Enter or Esc: Back to List | q: Quit",
+        ViewMode::Detail => "j/k: Scroll | h/l: Prev/Next Song | Enter/Esc: Back to List | q: Quit",
     };
 
     let help = Paragraph::new(help_text)

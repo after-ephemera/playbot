@@ -5,7 +5,7 @@ mod genius;
 mod tui;
 
 use anyhow::Result;
-use clap::Parser;
+use clap::{Parser, Subcommand};
 
 #[derive(Parser, Debug)]
 #[command(name = "playbot")]
@@ -31,14 +31,25 @@ struct Cli {
     #[arg(short, long)]
     search: Option<String>,
 
+    #[command(subcommand)]
+    command: Option<Commands>,
+}
+
+#[derive(Subcommand, Debug)]
+enum Commands {
     /// Show help information
-    #[arg(long, short = 'h', action = clap::ArgAction::Help)]
-    help: Option<bool>,
+    Help,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
+
+    // Handle help subcommand
+    if let Some(Commands::Help) = cli.command {
+        Cli::parse_from(&["pb", "--help"]);
+        return Ok(());
+    }
 
     // Load configuration
     let config = config::Config::load(&cli.config)?;
