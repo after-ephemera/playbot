@@ -10,7 +10,7 @@ pub struct Config {
 
 #[derive(Debug, Deserialize)]
 pub struct GeniusConfig {
-    pub access_token: String,
+    pub access_token: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

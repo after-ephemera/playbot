@@ -2,6 +2,7 @@ mod config;
 mod db;
 mod spotify;
 mod genius;
+mod tui;
 
 use anyhow::Result;
 use clap::Parser;
@@ -17,6 +18,14 @@ struct Cli {
     /// Force refresh data even if cached
     #[arg(short, long)]
     refresh: bool,
+
+    /// Show recently queried songs
+    #[arg(long)]
+    recent: bool,
+
+    /// Browse database with interactive TUI
+    #[arg(short, long)]
+    browse: bool,
 }
 
 #[tokio::main]
@@ -29,6 +38,32 @@ async fn main() -> Result<()> {
     // Initialize database
     let db = db::Database::new(&config.database.path)?;
     db.init()?;
+
+    // Handle --browse flag
+    if cli.browse {
+        return tui::run(db);
+    }
+
+    // Handle --recent flag
+    if cli.recent {
+        let recent_tracks = db.get_recent_tracks(10)?;
+
+        if recent_tracks.is_empty() {
+            println!("No recently queried songs found in the database.");
+            return Ok(());
+        }
+
+        println!("📚 Recently Queried Songs:\n");
+        for (i, track) in recent_tracks.iter().enumerate() {
+            println!("{}. {} by {}", i + 1, track.track_name, track.artist_name);
+            println!("   Album: {}", track.album_name);
+            if !track.release_date.is_empty() {
+                println!("   Released: {}", track.release_date);
+            }
+            println!();
+        }
+        return Ok(());
+    }
 
     // Get currently playing track from local Spotify client
     let spotify_client = spotify::SpotifyClient::new()?;
@@ -46,7 +81,9 @@ async fn main() -> Result<()> {
     }
 
     // Fetch lyrics from Genius
-    let genius_client = genius::GeniusClient::new(&config.genius.access_token);
+    let genius_client = genius::GeniusClient::new(
+        config.genius.access_token.as_deref().unwrap_or("")
+    );
     let lyrics = genius_client.get_lyrics(&track_info.title, &track_info.artist).await?;
 
     // Combine all information
