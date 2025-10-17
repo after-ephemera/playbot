@@ -1,0 +1,9 @@
+# Playbot Configuration
+
+[genius]
+# Genius API token is optional - lyrics will be fetched from Genius without authentication
+# You can leave this commented out or set it to an empty string
+# access_token = ""
+
+[database]
+path = "playbot.db"
