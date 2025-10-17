@@ -47,6 +47,32 @@ impl Database {
             [],
         ).context("Failed to create tracks table")?;
 
+        // Create a migration tracking table
+        self.conn.execute(
+            "CREATE TABLE IF NOT EXISTS schema_version (
+                version INTEGER PRIMARY KEY,
+                applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )",
+            [],
+        ).context("Failed to create schema_version table")?;
+
+        // Check if migration to Spotify URIs has been applied
+        let current_version: i32 = self.conn.query_row(
+            "SELECT COALESCE(MAX(version), 0) FROM schema_version",
+            [],
+            |row| row.get(0)
+        )?;
+
+        // Migration 1: Note about Spotify URI transition
+        // Old entries with format "title-artist" will continue to work
+        // New entries will use "spotify:track:xxxxx" format
+        if current_version < 1 {
+            self.conn.execute(
+                "INSERT INTO schema_version (version) VALUES (1)",
+                [],
+            )?;
+        }
+
         Ok(())
     }
 
