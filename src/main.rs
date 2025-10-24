@@ -1,7 +1,7 @@
 mod config;
 mod db;
-mod spotify;
 mod genius;
+mod spotify;
 mod tui;
 
 use anyhow::Result;
@@ -12,8 +12,8 @@ use clap::Parser;
 #[command(about = "Get detailed information about the currently playing Spotify song", long_about = None)]
 struct Cli {
     /// Path to the configuration file
-    #[arg(short, long, default_value = "config.toml")]
-    config: String,
+    #[arg(short, long)]
+    config: Option<String>,
 
     /// Force refresh data even if cached
     #[arg(short, long)]
@@ -40,8 +40,52 @@ struct Cli {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
+    // Ensure ~/.pb/ directory exists
+    config::Config::ensure_app_dir()?;
+
+    // Determine config file path
+    let config_path = if let Some(path) = &cli.config {
+        path.clone()
+    } else {
+        // Try to migrate old config if it exists and new one doesn't
+        let default_path = config::Config::get_default_config_path()?;
+        let old_config = std::path::PathBuf::from("config.toml");
+
+        if !default_path.exists() && old_config.exists() {
+            println!(
+                "📦 Migrating config from {} to {:?}",
+                old_config.display(),
+                default_path
+            );
+            std::fs::copy(&old_config, &default_path)?;
+        }
+
+        if !default_path.exists() {
+            println!("⚠️  Config file not found at {:?}", default_path);
+            println!(
+                "Please create one or copy config.toml.example to {:?}",
+                default_path
+            );
+            std::process::exit(1);
+        }
+
+        default_path.to_string_lossy().to_string()
+    };
+
     // Load configuration
-    let config = config::Config::load(&cli.config)?;
+    let config = config::Config::load(&config_path)?;
+
+    // Migrate old database if it exists
+    let old_db = std::path::PathBuf::from("playbot.db");
+    let new_db = std::path::PathBuf::from(&config.database.path);
+    if old_db.exists() && old_db != new_db && !new_db.exists() {
+        println!(
+            "📦 Migrating database from {} to {}",
+            old_db.display(),
+            new_db.display()
+        );
+        std::fs::copy(&old_db, &new_db)?;
+    }
 
     // Initialize database
     let db = db::Database::new(&config.database.path)?;
@@ -97,7 +141,12 @@ async fn main() -> Result<()> {
 
             if is_playing {
                 // Bright green with bold for NOW PLAYING
-                println!("\x1b[1;92m{}. 🎵 {} by {} ⚡ NOW PLAYING ⚡\x1b[0m", i + 1, track.track_name, track.artist_name);
+                println!(
+                    "\x1b[1;92m{}. 🎵 {} by {} ⚡ NOW PLAYING ⚡\x1b[0m",
+                    i + 1,
+                    track.track_name,
+                    track.artist_name
+                );
             } else {
                 println!("{}. {} by {}", i + 1, track.track_name, track.artist_name);
             }
@@ -135,7 +184,10 @@ async fn main() -> Result<()> {
     let spotify_client = spotify::SpotifyClient::new()?;
     let track_info = spotify_client.get_current_track().await?;
 
-    println!("🎵 Now Playing: {} by {}", track_info.title, track_info.artist);
+    println!(
+        "🎵 Now Playing: {} by {}",
+        track_info.title, track_info.artist
+    );
 
     // Check cache first
     if !cli.refresh {
@@ -147,10 +199,11 @@ async fn main() -> Result<()> {
     }
 
     // Fetch lyrics from Genius
-    let genius_client = genius::GeniusClient::new(
-        config.genius.access_token.as_deref().unwrap_or("")
-    );
-    let lyrics = genius_client.get_lyrics(&track_info.title, &track_info.artist).await?;
+    let genius_client =
+        genius::GeniusClient::new(config.genius.access_token.as_deref().unwrap_or(""));
+    let lyrics = genius_client
+        .get_lyrics(&track_info.title, &track_info.artist)
+        .await?;
 
     // Combine all information
     let full_info = db::TrackInfo {
@@ -180,29 +233,32 @@ fn print_track_info(info: &db::TrackInfo) {
     println!("📀 Track: {}", info.track_name);
     println!("👤 Artist: {}", info.artist_name);
     println!("💿 Album: {}", info.album_name);
-    
+
     if !info.release_date.is_empty() {
         println!("📅 Release Date: {}", info.release_date);
     }
-    
-    println!("⏱️  Duration: {}:{:02}", info.duration_ms / 60000, (info.duration_ms % 60000) / 1000);
+
+    println!(
+        "⏱️  Duration: {}:{:02}",
+        info.duration_ms / 60000,
+        (info.duration_ms % 60000) / 1000
+    );
     println!("⭐ Popularity: {}/100", info.popularity);
-    
+
     if !info.genres.is_empty() {
         println!("🎸 Genres: {}", info.genres);
     }
-    
+
     if !info.producers.is_empty() {
         println!("🎛️  Producers: {}", info.producers);
     }
-    
+
     if !info.writers.is_empty() {
         println!("✍️  Writers: {}", info.writers);
     }
-    
+
     if let Some(lyrics) = &info.lyrics {
         println!("\n📝 Lyrics:\n");
         println!("{}", lyrics);
     }
 }
-
