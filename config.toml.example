@@ -6,4 +6,4 @@
 # access_token = ""
 
 [database]
-path = "playbot.db"
+path = "~/.pb/playbot.db"
