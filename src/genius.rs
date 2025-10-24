@@ -12,8 +12,8 @@ impl GeniusClient {
     }
 
     pub async fn get_lyrics(&self, song_title: &str, artist_name: &str) -> Result<String> {
-        // Search for the song
-        let search_query = format!("{} {}", artist_name, song_title);
+        // Search for the song - try song title first for better results
+        let search_query = format!("{} {}", song_title, artist_name);
 
         let result = self.client
             .get_lyric(&search_query)
