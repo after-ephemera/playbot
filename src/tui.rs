@@ -148,10 +148,7 @@ pub fn run(db: Database) -> Result<()> {
     res
 }
 
-fn run_app<B: ratatui::backend::Backend>(
-    terminal: &mut Terminal<B>,
-    mut app: App,
-) -> Result<()> {
+fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, mut app: App) -> Result<()> {
     loop {
         terminal.draw(|f| ui(f, &mut app))?;
 
@@ -172,34 +169,32 @@ fn run_app<B: ratatui::backend::Backend>(
                         ViewMode::List => app.previous(),
                         ViewMode::Detail => app.scroll_up(),
                     },
-                    KeyCode::Char('l') | KeyCode::Right => match app.view_mode {
-                        ViewMode::Detail => {
+                    KeyCode::Char('l') | KeyCode::Right => {
+                        if let ViewMode::Detail = app.view_mode {
                             app.next();
                             app.reset_scroll();
-                        },
-                        _ => {}
-                    },
-                    KeyCode::Char('h') | KeyCode::Left => match app.view_mode {
-                        ViewMode::Detail => {
+                        }
+                    }
+                    KeyCode::Char('h') | KeyCode::Left => {
+                        if let ViewMode::Detail = app.view_mode {
                             app.previous();
                             app.reset_scroll();
-                        },
-                        _ => {}
-                    },
+                        }
+                    }
                     KeyCode::Enter => match app.view_mode {
                         ViewMode::List => {
                             app.reset_scroll();
                             app.view_mode = ViewMode::Detail;
-                        },
+                        }
                         ViewMode::Detail => {
                             app.reset_scroll();
                             app.view_mode = ViewMode::List;
-                        },
+                        }
                     },
                     KeyCode::Esc => {
                         app.reset_scroll();
                         app.view_mode = ViewMode::List;
-                    },
+                    }
                     _ => {}
                 },
                 InputMode::Editing => match key.code {
@@ -285,13 +280,12 @@ fn render_track_list(f: &mut Frame, app: &mut App, area: Rect) {
             let content = Line::from(vec![
                 Span::styled(
                     format!("{} ", track.track_name),
-                    Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
                 ),
                 Span::raw("by "),
-                Span::styled(
-                    &track.artist_name,
-                    Style::default().fg(Color::Green),
-                ),
+                Span::styled(&track.artist_name, Style::default().fg(Color::Green)),
             ]);
             ListItem::new(content)
         })
@@ -317,8 +311,11 @@ fn render_track_detail(f: &mut Frame, app: &App, area: Rect) {
     let track = match app.selected_track() {
         Some(t) => t,
         None => {
-            let paragraph = Paragraph::new("No track selected")
-                .block(Block::default().borders(Borders::ALL).title("Track Details"));
+            let paragraph = Paragraph::new("No track selected").block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Track Details"),
+            );
             f.render_widget(paragraph, area);
             return;
         }
@@ -341,7 +338,10 @@ fn render_track_detail(f: &mut Frame, app: &App, area: Rect) {
 
     if !track.release_date.is_empty() {
         lines.push(Line::from(vec![
-            Span::styled("Release Date: ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "Release Date: ",
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
             Span::raw(&track.release_date),
         ]));
     }
@@ -356,7 +356,10 @@ fn render_track_detail(f: &mut Frame, app: &App, area: Rect) {
     ]));
 
     lines.push(Line::from(vec![
-        Span::styled("Popularity: ", Style::default().add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "Popularity: ",
+            Style::default().add_modifier(Modifier::BOLD),
+        ),
         Span::raw(format!("{}/100", track.popularity)),
     ]));
 
@@ -394,7 +397,11 @@ fn render_track_detail(f: &mut Frame, app: &App, area: Rect) {
     }
 
     let paragraph = Paragraph::new(lines)
-        .block(Block::default().borders(Borders::ALL).title("Track Details"))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Track Details"),
+        )
         .wrap(Wrap { trim: true })
         .scroll((app.detail_scroll, 0));
 

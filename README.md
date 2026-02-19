@@ -2,14 +2,14 @@
 
 # playbot
 
+[![CI](https://github.com/after-ephemera/playbot/actions/workflows/ci.yml/badge.svg)](https://github.com/after-ephemera/playbot/actions/workflows/ci.yml)
+
 A CLI tool that fetches detailed information about your currently playing Spotify song, including lyrics, artist details, and more.
 
 ## Features
 
 - 🎵 Fetches currently playing track from local Spotify desktop app (no API credentials needed!)
 - 📝 Gets lyrics automatically (no API key required!)
-- 👤 Retrieves artist information
-- 💿 Shows album details and track duration
 - 💾 Caches results in local SQLite database for faster subsequent lookups
 - 🔍 Search and browse your music library
 - 📊 Interactive TUI browser with vim-style navigation
@@ -19,51 +19,52 @@ A CLI tool that fetches detailed information about your currently playing Spotif
 
 ## Installation
 
-Make sure you have Rust installed, then clone and build the project:
+Make sure you have Rust installed, then clone and install:
 
 ```bash
 git clone https://github.com/after-ephemera/playbot.git
 cd playbot
-cargo build --release
+cargo install --path .
 ```
 
-The binary will be available at `target/release/pb`.
+This installs the `pb` binary to `~/.cargo/bin/`. Alternatively, build without installing:
+
+```bash
+cargo build --release
+# binary at: target/release/pb
+```
 
 ## Configuration
 
-Create a `config.toml` file in the project root (you can copy from `config.toml.example`):
+On first run, `pb` creates a `~/.pb/` directory. Copy the example config:
 
-```toml
-[genius]
-# Optional - lyrics are fetched automatically without an API key
-# access_token = "your_genius_access_token"
-
-[database]
-path = "playbot.db"
+```bash
+cp config.toml.example ~/.pb/config.toml
 ```
 
-**Note:** The `playbot.db` file included in this repository is an example database with sample data. Your own database will be created when you first run the application.
+The config file only needs a database path:
 
-**Note:** No Spotify API credentials are needed! The tool reads directly from your local Spotify desktop application. Lyrics are also fetched automatically without requiring a Genius API key.
+```toml
+[database]
+path = "~/.pb/playbot.db"
+```
 
 ## Requirements
 
 - **Spotify Desktop App**: Must be installed and running with a song playing
-- **macOS**: `osascript` (built-in) - currently only macOS is supported
+- **macOS**: `osascript` (built-in) — currently only macOS is supported
 
 ## Usage
 
 Make sure Spotify desktop app is running and playing a song, then run:
 
 ```bash
-cargo run
-# or if you built with --release
-./target/release/pb
+pb
 ```
 
 ### Options
 
-- `-c, --config <FILE>`: Path to configuration file (default: `config.toml`)
+- `-c, --config <FILE>`: Path to configuration file (default: `~/.pb/config.toml`)
 - `-r, --refresh`: Force refresh data even if cached
 - `-b, --browse`: Launch interactive TUI browser to explore your music library
 - `-s, --search <QUERY>`: Search database by song title or artist name
@@ -76,9 +77,6 @@ cargo run
 ```bash
 # Get info about currently playing song
 pb
-
-# Use a custom config file
-pb --config /path/to/config.toml
 
 # Force refresh cached data
 pb --refresh
@@ -94,40 +92,42 @@ pb --recent
 
 # Count tracks in your database
 pb --count
+
+# Use a custom config file
+pb --config /path/to/config.toml
 ```
+
+### TUI Controls
+
+| Key | Action |
+|-----|--------|
+| `j` / `↓` | Move down |
+| `k` / `↑` | Move up |
+| `Enter` / `l` | View track details |
+| `h` / `Esc` | Go back |
+| `q` | Quit |
 
 ## How It Works
 
-1. Queries your local Spotify desktop app to get the currently playing track
-   - **macOS**: Uses AppleScript via `osascript` to query Spotify
+1. Queries your local Spotify desktop app to get the currently playing track via AppleScript
 2. Checks the local SQLite cache for existing data
-3. If not cached (or `--refresh` is used), fetches lyrics automatically (using lyric_finder)
+3. If not cached (or `--refresh` is used), fetches lyrics automatically
 4. Stores the data in the cache for future use
 5. Displays all information in a formatted output
 
-## Technologies Used
-
-- **clap**: Command-line argument parsing
-- **anyhow**: Error handling
-- **lyric_finder**: Automatic lyrics fetching
-- **rusqlite**: SQLite database for caching
-- **tokio**: Async runtime
-- **serde**: Serialization/deserialization
-- **toml**: Configuration file parsing
-- **ratatui**: Terminal UI library for the interactive browser
-- **crossterm**: Cross-platform terminal manipulation
-
-## Benefits Over API Approach
+## Why No API Keys?
 
 ✅ No Spotify API credentials needed
-✅ No Genius API credentials needed
 ✅ No OAuth flow required
-✅ Simpler setup - just install and run
+✅ Simpler setup — just install and run
 ✅ Works offline (for cached songs)
-✅ Faster - direct local access
-✅ More privacy - no data sent to Spotify servers
-✅ Interactive TUI for browsing your music library
+✅ Faster — direct local access
+✅ More private — no data sent to external servers
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, code style guidelines, and how to submit a pull request.
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).
