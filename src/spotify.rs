@@ -1,28 +1,25 @@
 use anyhow::{anyhow, Context, Result};
 use std::process::Command;
 
-#[derive(Debug)]
-pub struct TrackInfoBasic {
-    pub id: String,
-    pub title: String,
-    pub artist: String,
-    pub album: String,
-    pub release_date: String,
-    pub duration_ms: i64,
-    pub popularity: i32,
-    pub genres: Vec<String>,
-    pub producers: Vec<String>,
-    pub writers: Vec<String>,
-}
+use crate::db::TrackInfo;
 
+/// Client that reads track information from the local Spotify desktop app.
+///
+/// On macOS, this uses AppleScript via `osascript`. No API credentials are needed.
 pub struct SpotifyClient;
 
 impl SpotifyClient {
+    /// Create a new Spotify client.
+    ///
+    /// Returns an error on unsupported platforms.
     pub fn new() -> Result<Self> {
         Ok(Self)
     }
 
-    pub async fn get_current_track(&self) -> Result<TrackInfoBasic> {
+    /// Get the currently playing track from the Spotify desktop app.
+    ///
+    /// Returns an error if Spotify is not running or no track is playing.
+    pub async fn get_current_track(&self) -> Result<TrackInfo> {
         #[cfg(target_os = "macos")]
         {
             self.get_current_track_macos()
@@ -35,8 +32,7 @@ impl SpotifyClient {
     }
 
     #[cfg(target_os = "macos")]
-    fn get_current_track_macos(&self) -> Result<TrackInfoBasic> {
-        // Use osascript to query Spotify - now including the Spotify URI
+    fn get_current_track_macos(&self) -> Result<TrackInfo> {
         let script = r#"
             if application "Spotify" is running then
                 tell application "Spotify"
@@ -64,7 +60,11 @@ impl SpotifyClient {
 
         if !output.status.success() {
             let error = String::from_utf8_lossy(&output.stderr);
-            return Err(anyhow!("Spotify is not running or no track is playing. Make sure Spotify desktop app is open and playing a song.\nError: {}", error.trim()));
+            return Err(anyhow!(
+                "Spotify is not running or no track is playing. \
+                 Make sure Spotify desktop app is open and playing a song.\nError: {}",
+                error.trim()
+            ));
         }
 
         let result = String::from_utf8_lossy(&output.stdout);
@@ -74,25 +74,24 @@ impl SpotifyClient {
             return Err(anyhow!("Failed to parse Spotify track information"));
         }
 
-        let id = parts[0].to_string(); // Now using actual Spotify URI: spotify:track:xxxxx
-        let title = parts[1].to_string();
-        let artist = parts[2].to_string();
-        let album = parts[3].to_string();
+        let track_id = parts[0].to_string(); // Spotify URI: spotify:track:xxxxx
+        let track_name = parts[1].to_string();
+        let artist_name = parts[2].to_string();
+        let album_name = parts[3].to_string();
         let duration_ms = parts[4].parse::<i64>().unwrap_or(0);
 
-        Ok(TrackInfoBasic {
-            id,
-            title,
-            artist,
-            album,
+        Ok(TrackInfo {
+            track_id,
+            track_name,
+            artist_name,
+            album_name,
             release_date: String::new(),
             duration_ms,
             popularity: 0,
-            genres: Vec::new(),
-            producers: Vec::new(),
-            writers: Vec::new(),
+            genres: String::new(),
+            lyrics: None,
+            producers: String::new(),
+            writers: String::new(),
         })
     }
-
 }
-

@@ -1,28 +1,38 @@
 use anyhow::{Context, Result};
 use lyric_finder::{Client, LyricResult};
 
-pub struct GeniusClient {
+/// Client for fetching song lyrics automatically, without any API key.
+pub struct LyricsClient {
     client: Client,
 }
 
-impl GeniusClient {
-    pub fn new(_access_token: &str) -> Self {
+impl LyricsClient {
+    /// Create a new lyrics client.
+    pub fn new() -> Self {
         let client = Client::new();
         Self { client }
     }
 
+    /// Fetch lyrics for a song by title and artist name.
+    ///
+    /// Returns the lyrics as a formatted string, or a "not found" message if
+    /// no lyrics are available. Never returns an error for missing lyrics.
     pub async fn get_lyrics(&self, song_title: &str, artist_name: &str) -> Result<String> {
-        // Search for the song - try song title first for better results
         let search_query = format!("{} {}", song_title, artist_name);
 
-        let result = self.client
+        let result = self
+            .client
             .get_lyric(&search_query)
             .await
-            .context("Failed to fetch lyrics from Genius")?;
+            .context("Failed to fetch lyrics")?;
 
         match result {
-            LyricResult::Some { track, artists, lyric } => {
-                // Clean up the lyrics by removing Genius metadata
+            LyricResult::Some {
+                track,
+                artists,
+                lyric,
+            } => {
+                // Clean up the lyrics by removing metadata artifacts
                 let cleaned_lyric = lyric
                     .trim()
                     // Remove patterns like "1 Contributor", "2 Contributors", etc.
@@ -35,10 +45,11 @@ impl GeniusClient {
                     .trim();
 
                 Ok(format!("🎵 {}\n👤 {}\n\n{}", track, artists, cleaned_lyric))
-            },
-            LyricResult::None => {
-                Ok(format!("No lyrics found for '{}' by '{}'", song_title, artist_name))
             }
+            LyricResult::None => Ok(format!(
+                "No lyrics found for '{}' by '{}'",
+                song_title, artist_name
+            )),
         }
     }
 }

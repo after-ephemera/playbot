@@ -2,6 +2,12 @@
 name = "playbot"
 version = "0.1.0"
 edition = "2021"
+description = "CLI tool that shows your currently playing Spotify track with lyrics, using local macOS integration — no API keys needed"
+repository = "https://github.com/after-ephemera/playbot"
+license = "MIT"
+readme = "README.md"
+keywords = ["spotify", "lyrics", "cli", "music", "tui"]
+categories = ["command-line-utilities"]
 
 [[bin]]
 name = "pb"
@@ -15,6 +21,5 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 tokio = { version = "1.40", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 toml = "0.8"
-reqwest = { version = "0.12", features = ["json"] }
 ratatui = "0.29"
 crossterm = "0.28"
