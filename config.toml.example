@@ -2,3 +2,7 @@
 
 [database]
 path = "~/.pb/playbot.db"
+
+[daemon]
+# How often the daemon polls Spotify for the current track (seconds).
+poll_interval_secs = 5

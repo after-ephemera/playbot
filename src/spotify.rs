@@ -1,5 +1,4 @@
-use anyhow::{anyhow, Context, Result};
-use std::process::Command;
+use anyhow::{anyhow, Result};
 
 use crate::db::TrackInfo;
 
@@ -33,6 +32,9 @@ impl SpotifyClient {
 
     #[cfg(target_os = "macos")]
     fn get_current_track_macos(&self) -> Result<TrackInfo> {
+        use anyhow::Context;
+        use std::process::Command;
+
         let script = r#"
             if application "Spotify" is running then
                 tell application "Spotify"

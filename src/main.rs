@@ -1,11 +1,14 @@
 mod config;
+mod daemon;
 mod db;
 mod lyrics;
+mod mcp;
 mod spotify;
 mod tui;
 
 use anyhow::Result;
 use clap::Parser;
+use serde_json::json;
 
 #[derive(Parser, Debug)]
 #[command(name = "playbot")]
@@ -34,6 +37,30 @@ struct Cli {
     /// Count total tracks in database
     #[arg(short = 'n', long)]
     count: bool,
+
+    /// Show listening analytics (top tracks, artists, daily time)
+    #[arg(long)]
+    stats: bool,
+
+    /// Number of days to include in stats (default: 30)
+    #[arg(long, default_value = "30")]
+    days: usize,
+
+    /// Run as background daemon — polls Spotify and records play events
+    #[arg(long)]
+    daemon: bool,
+
+    /// Poll interval for daemon mode in seconds (default: 5)
+    #[arg(long, default_value = "5")]
+    poll: u64,
+
+    /// Expose playbot as an MCP server over stdio
+    #[arg(long)]
+    serve: bool,
+
+    /// Output results as JSON (for agent/script use)
+    #[arg(short = 'j', long)]
+    json: bool,
 }
 
 #[tokio::main]
@@ -97,23 +124,37 @@ fn migrate_database(config: &config::Config) -> Result<()> {
 }
 
 async fn dispatch(cli: Cli, config: config::Config, db: db::Database) -> Result<()> {
+    if cli.serve {
+        return mcp::serve(db).await;
+    }
+    if cli.daemon {
+        return daemon::run(db, cli.poll).await;
+    }
     if cli.browse {
         return tui::run(db);
     }
     if cli.count {
-        return handle_count(&db);
+        return handle_count(&db, cli.json);
     }
     if let Some(query) = &cli.search {
-        return handle_search(&db, query).await;
+        return handle_search(&db, query, cli.json).await;
     }
     if cli.recent {
-        return handle_recent(&db);
+        return handle_recent(&db, cli.json);
+    }
+    if cli.stats {
+        return handle_stats(&db, cli.days, cli.json);
     }
     handle_now_playing(cli, config, db).await
 }
 
-fn handle_count(db: &db::Database) -> Result<()> {
+fn handle_count(db: &db::Database, as_json: bool) -> Result<()> {
     let count = db.count_tracks()?;
+
+    if as_json {
+        println!("{}", json!({"count": count}));
+        return Ok(());
+    }
 
     let celebration = match count {
         0 => "Your music library is empty! Time to start exploring!",
@@ -132,15 +173,19 @@ fn handle_count(db: &db::Database) -> Result<()> {
     Ok(())
 }
 
-async fn handle_search(db: &db::Database, query: &str) -> Result<()> {
+async fn handle_search(db: &db::Database, query: &str, as_json: bool) -> Result<()> {
     let results = db.search_tracks(query)?;
+
+    if as_json {
+        println!("{}", serde_json::to_string_pretty(&results)?);
+        return Ok(());
+    }
 
     if results.is_empty() {
         println!("No results found for '{}'", query);
         return Ok(());
     }
 
-    // Try to get currently playing track (if Spotify is running) to highlight it
     let current_track_id = match spotify::SpotifyClient::new() {
         Ok(client) => match client.get_current_track().await {
             Ok(track) => Some(track.track_id),
@@ -173,8 +218,13 @@ async fn handle_search(db: &db::Database, query: &str) -> Result<()> {
     Ok(())
 }
 
-fn handle_recent(db: &db::Database) -> Result<()> {
+fn handle_recent(db: &db::Database, as_json: bool) -> Result<()> {
     let recent_tracks = db.get_recent_tracks(10)?;
+
+    if as_json {
+        println!("{}", serde_json::to_string_pretty(&recent_tracks)?);
+        return Ok(());
+    }
 
     if recent_tracks.is_empty() {
         println!("No recently queried songs found in the database.");
@@ -194,19 +244,74 @@ fn handle_recent(db: &db::Database) -> Result<()> {
     Ok(())
 }
 
+fn handle_stats(db: &db::Database, days: usize, as_json: bool) -> Result<()> {
+    let stats = db.get_stats(days)?;
+
+    if as_json {
+        println!("{}", serde_json::to_string_pretty(&stats)?);
+        return Ok(());
+    }
+
+    println!("📊 Listening Stats (last {} days)\n", days);
+
+    if stats.top_tracks.is_empty() {
+        println!("No listening data yet. Run `pb --daemon` in the background to start tracking.");
+        return Ok(());
+    }
+
+    println!("🎵 Top Tracks:");
+    for (i, ts) in stats.top_tracks.iter().enumerate() {
+        let mins = ts.total_ms / 60_000;
+        let secs = (ts.total_ms % 60_000) / 1000;
+        println!(
+            "  {}. {} — {} ({} plays, {}m {:02}s)",
+            i + 1,
+            ts.track.track_name,
+            ts.track.artist_name,
+            ts.play_count,
+            mins,
+            secs
+        );
+    }
+
+    println!("\n👤 Top Artists:");
+    for (i, artist) in stats.top_artists.iter().enumerate() {
+        let hours = artist.total_ms / 3_600_000;
+        let mins = (artist.total_ms % 3_600_000) / 60_000;
+        println!("  {}. {} — {}h {:02}m", i + 1, artist.artist_name, hours, mins);
+    }
+
+    println!("\n📅 Daily Listening:");
+    for (date, ms) in &stats.daily_ms {
+        let mins = ms / 60_000;
+        let bar_len = (mins / 5).min(30) as usize;
+        let bar = "█".repeat(bar_len);
+        println!("  {}  {:30}  {}m", date, bar, mins);
+    }
+
+    Ok(())
+}
+
 async fn handle_now_playing(cli: Cli, config: config::Config, db: db::Database) -> Result<()> {
     let spotify_client = spotify::SpotifyClient::new()?;
     let track_info = spotify_client.get_current_track().await?;
 
-    println!(
-        "🎵 Now Playing: {} by {}",
-        track_info.track_name, track_info.artist_name
-    );
-
     if !cli.refresh {
         if let Some(cached_info) = db.get_track_info(&track_info.track_id)? {
-            println!("\n📦 (Using cached data)\n");
-            print_track_info(&cached_info);
+            if cli.json {
+                let play_count = db.get_play_count(&track_info.track_id).unwrap_or(0);
+                let mut v = serde_json::to_value(&cached_info)?;
+                v["play_count"] = json!(play_count);
+                v["source"] = json!("cache");
+                println!("{}", serde_json::to_string_pretty(&v)?);
+            } else {
+                println!(
+                    "🎵 Now Playing: {} by {}",
+                    cached_info.track_name, cached_info.artist_name
+                );
+                println!("\n📦 (Using cached data)\n");
+                print_track_info(&cached_info);
+            }
             return Ok(());
         }
     }
@@ -223,12 +328,22 @@ async fn handle_now_playing(cli: Cli, config: config::Config, db: db::Database) 
 
     db.insert_track_info(&full_info)?;
 
-    println!("\n✨ Fresh data fetched!\n");
-    print_track_info(&full_info);
+    if cli.json {
+        let play_count = db.get_play_count(&full_info.track_id).unwrap_or(0);
+        let mut v = serde_json::to_value(&full_info)?;
+        v["play_count"] = json!(play_count);
+        v["source"] = json!("live");
+        println!("{}", serde_json::to_string_pretty(&v)?);
+    } else {
+        println!(
+            "🎵 Now Playing: {} by {}",
+            full_info.track_name, full_info.artist_name
+        );
+        println!("\n✨ Fresh data fetched!\n");
+        print_track_info(&full_info);
+    }
 
-    // Suppress unused variable warning when config has no runtime-used fields
     let _ = config;
-
     Ok(())
 }
 
