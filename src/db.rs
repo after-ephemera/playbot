@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use rusqlite::{params, Connection, Row};
+use serde::Serialize;
 
 /// Persistent track cache backed by SQLite.
 ///
@@ -9,7 +10,7 @@ pub struct Database {
 }
 
 /// Full track information stored in the cache.
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct TrackInfo {
     pub track_id: String,
     pub track_name: String,
@@ -25,6 +26,30 @@ pub struct TrackInfo {
     pub producers: String,
     /// Comma-separated songwriter names.
     pub writers: String,
+}
+
+/// Stats for a single artist aggregated from play events.
+#[derive(Debug, Serialize)]
+pub struct ArtistStat {
+    pub artist_name: String,
+    pub total_ms: i64,
+}
+
+/// Stats for a single track aggregated from play events.
+#[derive(Debug, Serialize)]
+pub struct TrackStat {
+    pub track: TrackInfo,
+    pub play_count: usize,
+    pub total_ms: i64,
+}
+
+/// Listening stats aggregated over a time window.
+#[derive(Debug, Serialize)]
+pub struct ListeningStats {
+    pub top_tracks: Vec<TrackStat>,
+    pub top_artists: Vec<ArtistStat>,
+    /// Date strings → total ms listened that day.
+    pub daily_ms: Vec<(String, i64)>,
 }
 
 fn row_to_track_info(row: &Row) -> rusqlite::Result<TrackInfo> {
@@ -93,8 +118,6 @@ impl Database {
         )?;
 
         // Migration 1: transition to Spotify URI track IDs.
-        // Old entries using "title-artist" format continue to work;
-        // new entries use "spotify:track:xxxxx" format.
         if current_version < 1 {
             self.conn
                 .execute("INSERT INTO schema_version (version) VALUES (1)", [])?;
@@ -112,6 +135,31 @@ impl Database {
             )?;
             self.conn
                 .execute("INSERT INTO schema_version (version) VALUES (2)", [])?;
+        }
+
+        // Migration 3: add play_events table for daemon-collected listening history.
+        if current_version < 3 {
+            self.conn.execute(
+                "CREATE TABLE IF NOT EXISTS play_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    track_id TEXT NOT NULL,
+                    started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    ended_at DATETIME,
+                    duration_listened_ms INTEGER,
+                    FOREIGN KEY (track_id) REFERENCES tracks(track_id)
+                )",
+                [],
+            )?;
+            self.conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_play_events_track_id ON play_events(track_id)",
+                [],
+            )?;
+            self.conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_play_events_started_at ON play_events(started_at)",
+                [],
+            )?;
+            self.conn
+                .execute("INSERT INTO schema_version (version) VALUES (3)", [])?;
         }
 
         Ok(())
@@ -219,6 +267,124 @@ impl Database {
             .conn
             .query_row("SELECT COUNT(*) FROM tracks", [], |row| row.get(0))?;
         Ok(count)
+    }
+
+    // ── Play event recording (used by daemon) ─────────────────────────────────
+
+    /// Record the start of a play event. Returns the new event's row id.
+    pub fn record_play_start(&self, track_id: &str) -> Result<i64> {
+        self.conn.execute(
+            "INSERT INTO play_events (track_id, started_at) VALUES (?1, CURRENT_TIMESTAMP)",
+            params![track_id],
+        )?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    /// Fill in the end time and duration for an open play event.
+    pub fn record_play_end(&self, event_id: i64, duration_ms: i64) -> Result<()> {
+        self.conn.execute(
+            "UPDATE play_events
+             SET ended_at = CURRENT_TIMESTAMP, duration_listened_ms = ?1
+             WHERE id = ?2",
+            params![duration_ms, event_id],
+        )?;
+        Ok(())
+    }
+
+    /// Return the number of times a track has been played (complete events only).
+    pub fn get_play_count(&self, track_id: &str) -> Result<usize> {
+        let count: usize = self.conn.query_row(
+            "SELECT COUNT(*) FROM play_events WHERE track_id = ?1 AND ended_at IS NOT NULL",
+            params![track_id],
+            |row| row.get(0),
+        )?;
+        Ok(count)
+    }
+
+    // ── Analytics queries (used by `pb stats`) ────────────────────────────────
+
+    /// Return top tracks by play count, looking back `days` calendar days.
+    pub fn get_top_tracks(&self, days: usize, limit: usize) -> Result<Vec<TrackStat>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT t.track_id, t.track_name, t.artist_name, t.album_name, t.release_date,
+                    t.duration_ms, t.popularity, t.genres, t.lyrics, t.producers, t.writers,
+                    COUNT(p.id) as play_count,
+                    COALESCE(SUM(p.duration_listened_ms), 0) as total_ms
+             FROM tracks t
+             JOIN play_events p ON p.track_id = t.track_id
+             WHERE p.started_at >= datetime('now', printf('-%d days', ?1))
+               AND p.ended_at IS NOT NULL
+             GROUP BY t.track_id
+             ORDER BY play_count DESC
+             LIMIT ?2",
+        )?;
+
+        let stats = stmt
+            .query_map(params![days, limit], |row| {
+                let track = row_to_track_info(row)?;
+                let play_count: usize = row.get(11)?;
+                let total_ms: i64 = row.get(12)?;
+                Ok(TrackStat {
+                    track,
+                    play_count,
+                    total_ms,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(stats)
+    }
+
+    /// Return top artists by total listening time, looking back `days` calendar days.
+    pub fn get_top_artists(&self, days: usize, limit: usize) -> Result<Vec<ArtistStat>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT t.artist_name, SUM(p.duration_listened_ms) as total_ms
+             FROM tracks t
+             JOIN play_events p ON p.track_id = t.track_id
+             WHERE p.started_at >= datetime('now', printf('-%d days', ?1))
+               AND p.ended_at IS NOT NULL
+             GROUP BY t.artist_name
+             ORDER BY total_ms DESC
+             LIMIT ?2",
+        )?;
+
+        let stats = stmt
+            .query_map(params![days, limit], |row| {
+                Ok(ArtistStat {
+                    artist_name: row.get(0)?,
+                    total_ms: row.get(1)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(stats)
+    }
+
+    /// Return total listening time per calendar day, looking back `days` days.
+    pub fn get_listening_by_day(&self, days: usize) -> Result<Vec<(String, i64)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT date(started_at) as day, SUM(duration_listened_ms) as total_ms
+             FROM play_events
+             WHERE started_at >= datetime('now', printf('-%d days', ?1))
+               AND ended_at IS NOT NULL
+             GROUP BY day
+             ORDER BY day DESC",
+        )?;
+
+        let rows = stmt
+            .query_map(params![days], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(rows)
+    }
+
+    /// Return aggregated stats for the last `days` days.
+    pub fn get_stats(&self, days: usize) -> Result<ListeningStats> {
+        Ok(ListeningStats {
+            top_tracks: self.get_top_tracks(days, 10)?,
+            top_artists: self.get_top_artists(days, 10)?,
+            daily_ms: self.get_listening_by_day(days)?,
+        })
     }
 }
 
@@ -352,5 +518,38 @@ mod tests {
         // Calling init() again should not fail
         db.init().unwrap();
         db.init().unwrap();
+    }
+
+    #[test]
+    fn play_events_record_and_count() {
+        let db = test_db();
+        let track = sample_track("spotify:track:x1", "Song", "Artist");
+        db.insert_track_info(&track).unwrap();
+
+        let event_id = db.record_play_start("spotify:track:x1").unwrap();
+        db.record_play_end(event_id, 200_000).unwrap();
+
+        assert_eq!(db.get_play_count("spotify:track:x1").unwrap(), 1);
+    }
+
+    #[test]
+    fn play_events_open_event_not_counted() {
+        let db = test_db();
+        let track = sample_track("spotify:track:x2", "Song", "Artist");
+        db.insert_track_info(&track).unwrap();
+
+        // Start event but don't end it — should not count
+        db.record_play_start("spotify:track:x2").unwrap();
+
+        assert_eq!(db.get_play_count("spotify:track:x2").unwrap(), 0);
+    }
+
+    #[test]
+    fn get_stats_returns_empty_with_no_events() {
+        let db = test_db();
+        let stats = db.get_stats(30).unwrap();
+        assert!(stats.top_tracks.is_empty());
+        assert!(stats.top_artists.is_empty());
+        assert!(stats.daily_ms.is_empty());
     }
 }
