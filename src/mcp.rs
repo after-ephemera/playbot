@@ -8,7 +8,7 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::io::{self, BufRead, Write};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 use crate::db::Database;
 use crate::lyrics::LyricsClient;
@@ -173,7 +173,6 @@ async fn dispatch_tool(name: &str, args: &Value, db: &Database) -> Value {
                 if let Some(lyrics) = cached.lyrics {
                     return json!({"lyrics": lyrics, "source": "cache"});
                 }
-                // Track in DB but no lyrics — fetch live
                 let lc = LyricsClient::new();
                 match lc.get_lyrics(&cached.track_name, &cached.artist_name).await {
                     Ok(lyrics) => json!({"lyrics": lyrics, "source": "live"}),
@@ -190,22 +189,30 @@ async fn dispatch_tool(name: &str, args: &Value, db: &Database) -> Value {
 
 /// Run the MCP stdio server loop. Exits when stdin closes.
 pub async fn serve(db: Database) -> Result<()> {
-    let stdin = io::stdin();
-    let stdout = io::stdout();
-    let mut out = stdout.lock();
+    let mut reader = BufReader::new(tokio::io::stdin());
+    let mut stdout = tokio::io::stdout();
+    let mut line = String::new();
 
-    for line in stdin.lock().lines() {
-        let line = match line {
-            Ok(l) if !l.trim().is_empty() => l,
-            _ => continue,
-        };
+    loop {
+        line.clear();
+        match reader.read_line(&mut line).await {
+            Ok(0) => break, // EOF
+            Ok(_) => {}
+            Err(e) => return Err(e.into()),
+        }
 
-        let req: Request = match serde_json::from_str(&line) {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        let req: Request = match serde_json::from_str(trimmed) {
             Ok(r) => r,
             Err(e) => {
                 let resp = err(json!(null), -32700, &format!("Parse error: {}", e));
-                writeln!(out, "{}", serde_json::to_string(&resp)?)?;
-                out.flush()?;
+                let out = serde_json::to_string(&resp)? + "\n";
+                stdout.write_all(out.as_bytes()).await?;
+                stdout.flush().await?;
                 continue;
             }
         };
@@ -246,8 +253,9 @@ pub async fn serve(db: Database) -> Result<()> {
             _ => err(req.id, -32601, "Method not found"),
         };
 
-        writeln!(out, "{}", serde_json::to_string(&response)?)?;
-        out.flush()?;
+        let out = serde_json::to_string(&response)? + "\n";
+        stdout.write_all(out.as_bytes()).await?;
+        stdout.flush().await?;
     }
 
     Ok(())

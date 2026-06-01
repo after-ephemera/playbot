@@ -46,7 +46,7 @@ struct Cli {
     #[arg(long, default_value = "30")]
     days: usize,
 
-    /// Run as background daemon — polls Spotify and records play events
+    /// Run daemon + MCP server — polls Spotify, records play events, and serves MCP on stdio
     #[arg(long)]
     daemon: bool,
 
@@ -124,11 +124,11 @@ fn migrate_database(config: &config::Config) -> Result<()> {
 }
 
 async fn dispatch(cli: Cli, config: config::Config, db: db::Database) -> Result<()> {
+    if cli.daemon {
+        return daemon::run(&config.database.path, cli.poll).await;
+    }
     if cli.serve {
         return mcp::serve(db).await;
-    }
-    if cli.daemon {
-        return daemon::run(db, cli.poll).await;
     }
     if cli.browse {
         return tui::run(db);
