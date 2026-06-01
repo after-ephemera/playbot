@@ -154,10 +154,7 @@ async fn dispatch_tool(name: &str, args: &Value, db: &Database) -> Value {
         }
 
         "get_stats" => {
-            let days = args
-                .get("days")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(30) as usize;
+            let days = args.get("days").and_then(|v| v.as_u64()).unwrap_or(30) as usize;
             match db.get_stats(days) {
                 Ok(stats) => serde_json::to_value(stats).unwrap_or(json!({})),
                 Err(e) => json!({"error": e.to_string()}),
@@ -235,11 +232,7 @@ pub async fn serve(db: Database) -> Result<()> {
                     .get("name")
                     .and_then(|v| v.as_str())
                     .unwrap_or("");
-                let args = req
-                    .params
-                    .get("arguments")
-                    .cloned()
-                    .unwrap_or(json!({}));
+                let args = req.params.get("arguments").cloned().unwrap_or(json!({}));
 
                 let result = dispatch_tool(name, &args, &db).await;
                 ok(

@@ -278,7 +278,13 @@ fn handle_stats(db: &db::Database, days: usize, as_json: bool) -> Result<()> {
     for (i, artist) in stats.top_artists.iter().enumerate() {
         let hours = artist.total_ms / 3_600_000;
         let mins = (artist.total_ms % 3_600_000) / 60_000;
-        println!("  {}. {} — {}h {:02}m", i + 1, artist.artist_name, hours, mins);
+        println!(
+            "  {}. {} — {}h {:02}m",
+            i + 1,
+            artist.artist_name,
+            hours,
+            mins
+        );
     }
 
     println!("\n📅 Daily Listening:");
