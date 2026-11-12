@@ -303,7 +303,10 @@ async fn handle_now_playing(cli: Cli, config: config::Config, db: db::Database) 
     let track_info = spotify_client.get_current_track().await?;
 
     if !cli.refresh {
-        if let Some(cached_info) = db.get_track_info(&track_info.track_id)? {
+        if let Some(cached_info) = db
+            .get_track_info(&track_info.track_id)?
+            .filter(|info| info.lyrics.is_some())
+        {
             if cli.json {
                 let play_count = db.get_play_count(&track_info.track_id).unwrap_or(0);
                 let mut v = serde_json::to_value(&cached_info)?;
@@ -323,12 +326,21 @@ async fn handle_now_playing(cli: Cli, config: config::Config, db: db::Database) 
     }
 
     let lyrics_client = lyrics::LyricsClient::new();
-    let lyric_text = lyrics_client
+    // A lyrics outage shouldn't hide the now-playing info. Cache without
+    // lyrics so the next run retries the fetch.
+    let lyric_text = match lyrics_client
         .get_lyrics(&track_info.track_name, &track_info.artist_name)
-        .await?;
+        .await
+    {
+        Ok(text) => Some(text),
+        Err(e) => {
+            eprintln!("⚠️  Could not fetch lyrics: {:#}", e);
+            None
+        }
+    };
 
     let full_info = db::TrackInfo {
-        lyrics: Some(lyric_text),
+        lyrics: lyric_text,
         ..track_info
     };
 

@@ -34,7 +34,7 @@ CI (`.github/workflows/ci.yml`) runs fmt-check, clippy (`-D warnings`), build, a
 
 - **`spotify.rs`** — `SpotifyClient` reads the current track via macOS AppleScript (`osascript`). The script returns a `|`-delimited string parsed into a `TrackInfo`. `track_id` is the Spotify URI (`spotify:track:xxxxx`). **macOS-only**: non-macOS builds compile but return an error at runtime (`#[cfg(target_os = "macos")]`).
 - **`db.rs`** — `Database` wraps a `rusqlite` `Connection`. `TrackInfo` is the central data struct shared across all modules (comma-separated strings for `genres`/`producers`/`writers`). Schema migrations are versioned via a `schema_version` table inside `init()` — add new migrations as `if current_version < N { ... }` blocks. Use `Database::new(":memory:")` for tests.
-- **`lyrics.rs`** — `LyricsClient` wraps the `lyric_finder` crate (keyless). Never errors on missing lyrics; returns a "not found" message instead. Contains cleanup logic that strips Genius-style metadata artifacts ("N Contributors", title + "Lyrics" prefix).
+- **`lyrics.rs`** — `LyricsClient` queries the keyless [LRCLIB](https://lrclib.net/docs) search API via `reqwest`. Returns a "not found"/"instrumental" message when there are no lyrics; only errors when the service is unreachable, and `main.rs` treats that as non-fatal (prints a warning, caches the track without lyrics so the next run retries).
 - **`config.rs`** — loads TOML config (`~/.pb/config.toml`), whose only field is `database.path`. Expands a leading `~/` to `$HOME`.
 - **`tui.rs`** — `ratatui` + `crossterm` interactive browser (`--browse`). `App` holds view state with `InputMode` (Normal/Editing for search) and `ViewMode` (List/Detail). Vim-style keys (`j/k`, `h/l`, `Enter`, `Esc`, `q`).
 
